@@ -1,5 +1,12 @@
 use anyhow::{anyhow, Result};
-use axum::{response::Html, routing::get, Router};
+use askama::Template;
+use axum::{
+    extract,
+    http::StatusCode,
+    response::{Html, IntoResponse, Response},
+    routing::get,
+    Router,
+};
 use clap::Parser;
 use regex::Regex;
 use std::fs;
@@ -65,7 +72,7 @@ async fn main() {
         println!("==============");
     }
 
-    let app = Router::new().route("/", get(handler));
+    let app = Router::new().route("/", get(greet));
 
     axum::Server::bind(&"0.0.0.0:3000".parse().unwrap())
         .serve(app.into_make_service())
@@ -73,6 +80,31 @@ async fn main() {
         .unwrap();
 }
 
-async fn handler() -> Html<&'static str> {
-    Html("<h1>Hello, World!</h1>")
+async fn greet(extract::Path(name): extract::Path<String>) -> impl IntoResponse {
+    let template = HelloTemplate { name };
+    HtmlTemplate(template)
+}
+
+#[derive(Template)]
+#[template(path = "hello.html")]
+struct HelloTemplate {
+    name: String,
+}
+
+struct HtmlTemplate<T>(T);
+
+impl<T> IntoResponse for HtmlTemplate<T>
+where
+    T: Template,
+{
+    fn into_response(self) -> Response {
+        match self.0.render() {
+            Ok(html) => Html(html).into_response(),
+            Err(err) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to render template. Error: {}", err),
+            )
+                .into_response(),
+        }
+    }
 }
