@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Result};
 use askama::Template;
 use axum::{
-    extract,
+    extract::{Path, State},
     http::StatusCode,
     response::{Html, IntoResponse, Response},
     routing::get,
@@ -10,7 +10,9 @@ use axum::{
 use clap::Parser;
 use regex::Regex;
 use std::fs;
+use std::sync::Arc;
 use tokio;
+use tower_http::services::{ServeDir, ServeFile};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -19,7 +21,7 @@ struct Args {
     filename: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct ImgInfo {
     path: String,
     width: u32,
@@ -63,16 +65,23 @@ fn parse_dups(filename: &str) -> Result<Vec<DupGroup>> {
 #[tokio::main]
 async fn main() {
     let args = Args::parse();
-    println!("{:?}", args);
+    let base_dir = std::path::Path::new(&args.filename).parent().unwrap();
+    println!("base_dir: {}", base_dir.display());
 
-    for group in parse_dups(&args.filename).unwrap() {
-        for img in group {
-            println!("{:?}", img);
-        }
-        println!("==============");
+    let dups = parse_dups(&args.filename).unwrap();
+    let dups = Arc::new(dups);
+
+    let mut app = Router::new()
+        .route("/", get(root).with_state(Arc::clone(&dups)))
+        .with_state(Arc::clone(&dups));
+
+    // Add a route for each image
+    for img in dups.iter().flatten() {
+        app = app.nest_service(
+            format!("/image/{}", &img.path).as_str(),
+            ServeFile::new(base_dir.join(&img.path).as_os_str()),
+        );
     }
-
-    let app = Router::new().route("/", get(greet));
 
     axum::Server::bind(&"0.0.0.0:3000".parse().unwrap())
         .serve(app.into_make_service())
@@ -80,15 +89,17 @@ async fn main() {
         .unwrap();
 }
 
-async fn greet(extract::Path(name): extract::Path<String>) -> impl IntoResponse {
-    let template = HelloTemplate { name };
+async fn root(State(dups): State<Arc<Vec<DupGroup>>>) -> impl IntoResponse {
+    let template = ListTemplate {
+        dups: dups.to_vec(),
+    };
     HtmlTemplate(template)
 }
 
 #[derive(Template)]
-#[template(path = "hello.html")]
-struct HelloTemplate {
-    name: String,
+#[template(path = "list.html")]
+struct ListTemplate {
+    dups: Vec<DupGroup>,
 }
 
 struct HtmlTemplate<T>(T);
