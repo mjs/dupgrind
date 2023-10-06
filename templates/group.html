@@ -1,0 +1,35 @@
+<html>
+
+  <body>
+    {% for img in group %}
+    <div style="display: inline-block;">
+      <b>{{ loop.index }}</b>: {{ img.path }} - {{ img.width }} x {{ img.height }}<br>
+      <img src="/image/{{ img.path }}" width="800px">
+    </div>
+    {% endfor %}
+  </body>
+
+  <script>
+    const keyHandler = function(event) {
+      console.log(event.code);
+      switch (event.code) {
+        case 'Digit1':
+          console.log("one");
+          break;
+        {% if index > 0 %}
+        case 'KeyP':
+          document.location.href = "/group/{{ index - 1 }}";
+        {% endif %}
+        {% if next_group %}
+        case 'KeyN':
+          document.location.href = "/group/{{ index + 1 }}";
+        {% endif %}
+      }
+    }
+
+    window.onload = function() {
+        window.addEventListener('keyup', keyHandler);
+    }
+  </script>
+
+</html>

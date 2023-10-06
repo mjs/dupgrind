@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Result};
 use askama::Template;
 use axum::{
+    debug_handler,
     extract::{Path, State},
     http::StatusCode,
     response::{Html, IntoResponse, Response},
@@ -12,7 +13,7 @@ use regex::Regex;
 use std::fs;
 use std::sync::Arc;
 use tokio;
-use tower_http::services::{ServeDir, ServeFile};
+use tower_http::services::ServeFile;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -62,6 +63,7 @@ fn parse_dups(filename: &str) -> Result<Vec<DupGroup>> {
     return Ok(groups);
 }
 
+// XXX gracefully handle errors in main
 #[tokio::main]
 async fn main() {
     let args = Args::parse();
@@ -71,9 +73,14 @@ async fn main() {
     let dups = parse_dups(&args.filename).unwrap();
     let dups = Arc::new(dups);
 
+    // XXX bail if no dups
+    // XXX redirect root to group 0
+    // XXX delete handler
+    // XXX reload on delete
+
     let mut app = Router::new()
-        .route("/", get(root).with_state(Arc::clone(&dups)))
-        .with_state(Arc::clone(&dups));
+        //.route("/", get(root).with_state(Arc::clone(&dups)))
+        .route("/group/:index", get(group).with_state(Arc::clone(&dups)));
 
     // Add a route for each image
     for img in dups.iter().flatten() {
@@ -89,17 +96,25 @@ async fn main() {
         .unwrap();
 }
 
-async fn root(State(dups): State<Arc<Vec<DupGroup>>>) -> impl IntoResponse {
-    let template = ListTemplate {
-        dups: dups.to_vec(),
+#[debug_handler]
+async fn group(
+    Path(index): Path<usize>,
+    State(dups): State<Arc<Vec<DupGroup>>>,
+) -> impl IntoResponse {
+    let template = GroupTemplate {
+        index,
+        next_group: index < dups.len() - 1,
+        group: dups.get(index).unwrap().to_vec(),
     };
     HtmlTemplate(template)
 }
 
 #[derive(Template)]
-#[template(path = "list.html")]
-struct ListTemplate {
-    dups: Vec<DupGroup>,
+#[template(path = "group.html")]
+struct GroupTemplate {
+    index: usize,
+    next_group: bool,
+    group: DupGroup,
 }
 
 struct HtmlTemplate<T>(T);
