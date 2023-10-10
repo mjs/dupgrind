@@ -4,7 +4,7 @@ use axum::{
     debug_handler,
     extract::{Path, State},
     http::StatusCode,
-    response::{Html, IntoResponse, Response},
+    response::{Html, IntoResponse, Redirect, Response},
     routing::get,
     Router,
 };
@@ -74,15 +74,15 @@ async fn main() {
     let dups = Arc::new(dups);
 
     // XXX bail if no dups
-    // XXX redirect root to group 0
     // XXX delete handler
     // XXX reload on delete
 
     let mut app = Router::new()
-        //.route("/", get(root).with_state(Arc::clone(&dups)))
+        .route("/", get(|| async { Redirect::permanent("/group/0") }))
         .route("/group/:index", get(group).with_state(Arc::clone(&dups)));
 
     // Add a route for each image
+    // XXX fallback to "missing" image
     for img in dups.iter().flatten() {
         app = app.nest_service(
             format!("/image/{}", &img.path).as_str(),
