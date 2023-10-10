@@ -31,6 +31,12 @@ struct ImgInfo {
 
 type DupGroup = Vec<ImgInfo>;
 
+#[derive(Debug, Clone)]
+struct AppState {
+    dups: Vec<DupGroup>,
+    trash_dir: std::path::PathBuf,
+}
+
 fn parse_dups(filename: &str) -> Result<Vec<DupGroup>> {
     let line_re = Regex::new(r"^\s*\w+\((\d+)x(\d+)\): (.+)")?;
 
@@ -68,18 +74,24 @@ fn parse_dups(filename: &str) -> Result<Vec<DupGroup>> {
 async fn main() {
     let args = Args::parse();
     let base_dir = std::path::Path::new(&args.filename).parent().unwrap();
-    println!("base_dir: {}", base_dir.display());
+    let trash_dir = base_dir.join("trash");
+    fs::create_dir_all(trash_dir.clone()).unwrap();
 
     let dups = parse_dups(&args.filename).unwrap();
-    let dups = Arc::new(dups);
-
     // XXX bail if no dups
+
+    // XXX avoid clones?
+    let state = Arc::new(AppState {
+        dups: dups.clone(),
+        trash_dir: trash_dir.clone(),
+    });
+
     // XXX delete handler
     // XXX reload on delete
 
     let mut app = Router::new()
         .route("/", get(|| async { Redirect::permanent("/group/0") }))
-        .route("/group/:index", get(group).with_state(Arc::clone(&dups)));
+        .route("/group/:index", get(group).with_state(Arc::clone(&state)));
 
     // Add a route for each image
     // XXX fallback to "missing" image
@@ -97,14 +109,11 @@ async fn main() {
 }
 
 #[debug_handler]
-async fn group(
-    Path(index): Path<usize>,
-    State(dups): State<Arc<Vec<DupGroup>>>,
-) -> impl IntoResponse {
+async fn group(Path(index): Path<usize>, State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let template = GroupTemplate {
         index,
-        next_group: index < dups.len() - 1,
-        group: dups.get(index).unwrap().to_vec(),
+        next_group: index < state.dups.len() - 1,
+        group: state.dups.get(index).unwrap().to_vec(),
     };
     HtmlTemplate(template)
 }
