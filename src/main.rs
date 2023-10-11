@@ -13,7 +13,7 @@ use regex::Regex;
 use std::fs;
 use std::sync::Arc;
 use tokio;
-use tower_http::services::ServeFile;
+use tower_http::services::{ServeDir, ServeFile};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -94,11 +94,11 @@ async fn main() {
         .route("/group/:index", get(group).with_state(Arc::clone(&state)));
 
     // Add a route for each image
-    // XXX fallback to "missing" image
     for img in dups.iter().flatten() {
         app = app.nest_service(
             format!("/image/{}", &img.path).as_str(),
-            ServeFile::new(base_dir.join(&img.path).as_os_str()),
+            ServeDir::new(base_dir.join(&img.path).as_os_str())
+                .not_found_service(ServeFile::new("assets/missing.png")),
         );
     }
 
