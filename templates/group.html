@@ -10,10 +10,32 @@
   </body>
 
   <script>
+    const deleteImage = function(image_idx) {
+      fetch(`/group/{{ index }}/image/${ image_idx }`, { method: 'DELETE' })
+        .then(_ => {
+          location.reload(true);
+        });
+    }
+
     const keyHandler = function(event) {
       switch (event.code) {
         case 'Digit1':
-          console.log("one");
+          deleteImage(0);
+          break;
+        case 'Digit2':
+          deleteImage(1);
+          break;
+        case 'Digit3':
+          deleteImage(2);
+          break;
+        case 'Digit4':
+          deleteImage(3);
+          break;
+        case 'Digit5':
+          deleteImage(4);
+          break;
+        case 'Digit6':
+          deleteImage(5);
           break;
         {% if index > 0 %}
         case 'KeyP':

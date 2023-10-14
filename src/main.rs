@@ -5,7 +5,7 @@ use axum::{
     extract::{Path, State},
     http::StatusCode,
     response::{Html, IntoResponse, Redirect, Response},
-    routing::get,
+    routing::{delete, get},
     Router,
 };
 use clap::Parser;
@@ -34,6 +34,7 @@ type DupGroup = Vec<ImgInfo>;
 #[derive(Debug, Clone)]
 struct AppState {
     dups: Vec<DupGroup>,
+    base_dir: std::path::PathBuf,
     trash_dir: std::path::PathBuf,
 }
 
@@ -75,7 +76,6 @@ async fn main() {
     let args = Args::parse();
     let base_dir = std::path::Path::new(&args.filename).parent().unwrap();
     let trash_dir = base_dir.join("trash");
-    fs::create_dir_all(trash_dir.clone()).unwrap();
 
     let dups = parse_dups(&args.filename).unwrap();
     // XXX bail if no dups
@@ -83,17 +83,20 @@ async fn main() {
     // XXX avoid clones?
     let state = Arc::new(AppState {
         dups: dups.clone(),
+        base_dir: base_dir.to_path_buf(),
         trash_dir: trash_dir.clone(),
     });
 
-    // XXX delete handler
-    // XXX reload on delete
-
     let mut app = Router::new()
         .route("/", get(|| async { Redirect::permanent("/group/0") }))
-        .route("/group/:index", get(group).with_state(Arc::clone(&state)));
+        .route("/group/:index", get(group).with_state(Arc::clone(&state)))
+        .route(
+            "/group/:group_idx/image/:image_idx",
+            delete(trash_image).with_state(Arc::clone(&state)),
+        );
 
     // Add a route for each image
+    // XXX handle with a single handler
     for img in dups.iter().flatten() {
         app = app.nest_service(
             format!("/image/{}", &img.path).as_str(),
@@ -124,6 +127,42 @@ struct GroupTemplate {
     index: usize,
     next_group: bool,
     group: DupGroup,
+}
+
+#[debug_handler]
+async fn trash_image(
+    Path((group_idx, image_idx)): Path<(usize, usize)>,
+    State(state): State<Arc<AppState>>,
+) -> (StatusCode, String) {
+    let group = match state.dups.get(group_idx) {
+        Option::Some(group) => group,
+        Option::None => {
+            return (StatusCode::NOT_FOUND, "Invalid group index".to_string());
+        }
+    };
+
+    let image = match group.get(image_idx) {
+        Option::Some(image) => image,
+        Option::None => {
+            return (StatusCode::NOT_FOUND, "Invalid image index".to_string());
+        }
+    };
+
+    let source_path = state.base_dir.join(&image.path);
+    let target_path = state.trash_dir.join(&image.path);
+
+    // Ensure that destination directory exists
+    // XXX deal with unwrap
+    match fs::create_dir_all(target_path.parent().unwrap()) {
+        Ok(_) => (),
+        Err(err) => return (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
+    }
+
+    // XXX deal with unwrap
+    // XXX This doesn't work for cross file system moves
+    fs::rename(source_path, target_path).unwrap();
+
+    (StatusCode::OK, "Deleted".to_string())
 }
 
 struct HtmlTemplate<T>(T);
