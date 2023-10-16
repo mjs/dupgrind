@@ -1,8 +1,10 @@
 <html>
 
+  {# XXX make this prettier #}
+
   <body>
     {% for img in group %}
-    <div style="display: inline-block;">
+      <div style="vertical-align: top; display: inline-block;">
       <b>{{ loop.index }}</b>: {{ img.path }} - {{ img.width }} x {{ img.height }}<br>
       <img src="/image/{{ img.path }}" width="800px">
     </div>
