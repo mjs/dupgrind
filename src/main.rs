@@ -12,7 +12,6 @@ use clap::Parser;
 use regex::Regex;
 use std::fs;
 use std::sync::Arc;
-use tokio;
 use tower_http::services::{ServeDir, ServeFile};
 
 #[derive(Parser, Debug)]
@@ -67,7 +66,7 @@ fn parse_dups(filename: &str) -> Result<Vec<DupGroup>> {
     if !group.is_empty() {
         groups.push(group);
     }
-    return Ok(groups);
+    Ok(groups)
 }
 
 // XXX gracefully handle errors in main
