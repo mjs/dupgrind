@@ -47,9 +47,11 @@ fn parse_dups(filename: &str) -> Result<Vec<DupGroup>> {
 
     let reader = BufReader::new(fs::File::open(filename)?);
     let mut group = Vec::new();
+    // XXX line numbers in errors
     for line in reader.lines() {
         let line = line?;
         if !line.starts_with('\t') {
+            // A line without a tab means a new group
             if !group.is_empty() {
                 groups.push(group);
             }
@@ -60,11 +62,21 @@ fn parse_dups(filename: &str) -> Result<Vec<DupGroup>> {
             .captures(&line)
             .ok_or_else(|| anyhow!("Line does not match expected format: {}", line))?;
 
-        // XXX clean up unwraps here
+        let Some(path_cap) = caps.get(3) else { 
+            return Err(anyhow!("Missing path on line: {}", line)) 
+        };
+        let Some(width_cap) = caps.get(1) else { 
+            return Err(anyhow!("Missing width on line: {}", line))
+        };
+        let Some(height_cap) = caps.get(2) else { 
+            return Err(anyhow!("Missing height on line: {}", line)) 
+        };
+
+        // XXX customize errors for failed parsing
         let info = ImgInfo {
-            path: caps.get(3).unwrap().as_str().to_string(),
-            width: caps.get(1).unwrap().as_str().parse()?,
-            height: caps.get(2).unwrap().as_str().parse()?,
+            path: path_cap.as_str().to_string(),
+            width: width_cap.as_str().parse()?,
+            height: height_cap.as_str().parse()?,
         };
         group.push(info);
     }
@@ -138,18 +150,13 @@ async fn trash_image(
     Path((group_idx, image_idx)): Path<(usize, usize)>,
     State(state): State<Arc<AppState>>,
 ) -> (StatusCode, String) {
-    let group = match state.dups.get(group_idx) {
-        Option::Some(group) => group,
-        Option::None => {
-            return (StatusCode::NOT_FOUND, "Invalid group index".to_string());
-        }
+
+    let Some(group) = state.dups.get(group_idx) else {
+        return (StatusCode::NOT_FOUND, "Invalid group index".to_string());
     };
 
-    let image = match group.get(image_idx) {
-        Option::Some(image) => image,
-        Option::None => {
-            return (StatusCode::NOT_FOUND, "Invalid image index".to_string());
-        }
+    let Some(image) = group.get(image_idx) else {
+        return (StatusCode::NOT_FOUND, "Invalid image index".to_string());
     };
 
     let source_path = state.base_dir.join(&image.path);
