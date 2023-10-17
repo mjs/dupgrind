@@ -11,6 +11,7 @@ use axum::{
 use clap::Parser;
 use regex::Regex;
 use std::fs;
+use std::io::{BufRead, BufReader};
 use std::sync::Arc;
 use tower_http::services::{ServeDir, ServeFile};
 
@@ -38,13 +39,16 @@ struct AppState {
 }
 
 fn parse_dups(filename: &str) -> Result<Vec<DupGroup>> {
+    // XXX pre-compile
     let line_re = Regex::new(r"^\s*\w+\((\d+)x(\d+)\): (.+)")?;
 
+    // XXX guess initial size?
     let mut groups = Vec::new();
-    let mut group = Vec::new();
 
-    let buf = fs::read_to_string(filename)?;
-    for line in buf.lines() {
+    let reader = BufReader::new(fs::File::open(filename)?);
+    let mut group = Vec::new();
+    for line in reader.lines() {
+        let line = line?;
         if !line.starts_with('\t') {
             if !group.is_empty() {
                 groups.push(group);
@@ -53,9 +57,10 @@ fn parse_dups(filename: &str) -> Result<Vec<DupGroup>> {
         }
 
         let caps = line_re
-            .captures(line)
-            .ok_or_else(|| anyhow!("Invalid line: {}", line))?;
+            .captures(&line)
+            .ok_or_else(|| anyhow!("Line does not match expected format: {}", line))?;
 
+        // XXX clean up unwraps here
         let info = ImgInfo {
             path: caps.get(3).unwrap().as_str().to_string(),
             width: caps.get(1).unwrap().as_str().parse()?,
