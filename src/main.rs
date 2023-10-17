@@ -75,6 +75,7 @@ fn parse_dups(filename: &str) -> Result<Vec<DupGroup>> {
 }
 
 // XXX gracefully handle errors in main
+// XXX avoid all the unwraps
 #[tokio::main]
 async fn main() {
     let args = Args::parse();
@@ -84,11 +85,10 @@ async fn main() {
     let dups = parse_dups(&args.filename).unwrap();
     // XXX bail if no dups
 
-    // XXX avoid clones?
     let state = Arc::new(AppState {
-        dups: dups.clone(),
+        dups,
         base_dir: base_dir.to_path_buf(),
-        trash_dir: trash_dir.clone(),
+        trash_dir,
     });
 
     let mut app = Router::new()
@@ -101,7 +101,7 @@ async fn main() {
 
     // Add a route for each image
     // XXX handle with a single handler
-    for img in dups.iter().flatten() {
+    for img in state.dups.iter().flatten() {
         app = app.nest_service(
             format!("/image/{}", &img.path).as_str(),
             ServeDir::new(base_dir.join(&img.path).as_os_str())
