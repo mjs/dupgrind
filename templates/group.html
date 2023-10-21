@@ -13,7 +13,7 @@
 
   <script>
     const deleteImage = function(image_idx) {
-      fetch(`/group/{{ index }}/image/${ image_idx }`, { method: 'DELETE' })
+      fetch(`/group/{{ group_idx }}/image/${ image_idx }`, { method: 'DELETE' })
         .then(_ => {
           location.reload(true);
         });
@@ -39,13 +39,13 @@
         case 'Digit6':
           deleteImage(5);
           break;
-        {% if index > 0 %}
+        {% if group_idx > 0 %}
         case 'KeyP':
-          document.location.href = "/group/{{ index - 1 }}";
+          document.location.href = "/group/{{ group_idx - 1 }}";
         {% endif %}
-        {% if next_group %}
+        {% if is_next_group %}
         case 'KeyN':
-          document.location.href = "/group/{{ index + 1 }}";
+          document.location.href = "/group/{{ group_idx + 1 }}";
         {% endif %}
       }
     }

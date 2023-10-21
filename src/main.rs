@@ -105,7 +105,7 @@ async fn main() {
 
     let mut app = Router::new()
         .route("/", get(|| async { Redirect::permanent("/group/0") }))
-        .route("/group/:index", get(group).with_state(Arc::clone(&state)))
+        .route("/group/:group_idx", get(group).with_state(Arc::clone(&state)))
         .route(
             "/group/:group_idx/image/:image_idx",
             delete(trash_image).with_state(Arc::clone(&state)),
@@ -128,21 +128,31 @@ async fn main() {
 }
 
 #[debug_handler]
-async fn group(Path(index): Path<usize>, State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    let template = GroupTemplate {
-        index,
-        next_group: index < state.dups.len() - 1,
-        group: state.dups.get(index).unwrap().to_vec(),
+async fn group(Path(group_idx): Path<usize>, State(state): State<Arc<AppState>>) -> Response {
+    let Some(group) = state.dups.get(group_idx) else {
+        return Redirect::to("/group/0").into_response();
     };
-    HtmlTemplate(template)
+
+    let template = GroupTemplate {
+        group_idx,
+        is_next_group: group_idx < state.dups.len() - 1,
+        group: group.to_vec(),
+    };
+    HtmlTemplate(template).into_response()
 }
 
 #[derive(Template)]
 #[template(path = "group.html")]
 struct GroupTemplate {
-    index: usize,
-    next_group: bool,
+    group_idx: usize,
+    is_next_group: bool,
     group: DupGroup,
+}
+
+#[derive(Template)]
+#[template(path = "invalid_group.html")]
+struct InvalidGroupTemplate {
+    group_idx: usize,
 }
 
 #[debug_handler]
