@@ -377,8 +377,10 @@ dependencies = [
  "askama",
  "axum",
  "clap",
+ "mime_guess",
  "regex",
  "tokio",
+ "tokio-util",
  "tower-http",
 ]
 

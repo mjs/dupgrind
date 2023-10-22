@@ -1,8 +1,11 @@
+// XXX check for unused deps
 use anyhow::{anyhow, Result};
 use askama::Template;
 use axum::{
+    body::StreamBody,
     debug_handler,
     extract::{Path, State},
+    http::header,
     http::StatusCode,
     response::{Html, IntoResponse, Redirect, Response},
     routing::{delete, get},
@@ -13,6 +16,7 @@ use regex::Regex;
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::sync::Arc;
+use tokio_util::io::ReaderStream;
 use tower_http::services::{ServeDir, ServeFile};
 
 #[derive(Parser, Debug)]
@@ -108,6 +112,10 @@ async fn main() {
         .route("/group/:group_idx", get(group).with_state(Arc::clone(&state)))
         .route(
             "/group/:group_idx/image/:image_idx",
+            get(get_image).with_state(Arc::clone(&state)),
+        )
+        .route(
+            "/group/:group_idx/image/:image_idx",
             delete(trash_image).with_state(Arc::clone(&state)),
         );
 
@@ -149,10 +157,48 @@ struct GroupTemplate {
     group: DupGroup,
 }
 
-#[derive(Template)]
-#[template(path = "invalid_group.html")]
-struct InvalidGroupTemplate {
-    group_idx: usize,
+#[debug_handler]
+async fn get_image(
+    Path((group_idx, image_idx)): Path<(usize, usize)>,
+    State(state): State<Arc<AppState>>,
+) -> Response {
+    // XXX let Some (or extract common helper)
+    let group = match state.dups.get(group_idx) {
+        Option::Some(group) => group,
+        Option::None => {
+            return (StatusCode::NOT_FOUND, "Invalid group index".to_string()).into_response();
+        }
+    };
+
+    let image = match group.get(image_idx) {
+        Option::Some(image) => image,
+        Option::None => {
+            return (StatusCode::NOT_FOUND, "Invalid image index".to_string()).into_response();
+        }
+    };
+
+    let source_path = state.base_dir.join(&image.path);
+
+    // `File` implements `AsyncRead`
+    let file = match tokio::fs::File::open(source_path).await {
+        Ok(file) => file,
+        Err(err) => {
+            return (StatusCode::NOT_FOUND, format!("File not found: {}", err)).into_response();
+        }
+    };
+
+    let stream = ReaderStream::new(file);
+    let body = StreamBody::new(stream);
+
+    let content_type = mime_guess::from_path(&image.path)
+        .first_raw()
+        .unwrap_or("application/octet-stream");
+
+    // XXX include size header?
+    let headers = [
+        (header::CONTENT_TYPE, content_type),
+    ];
+    (headers, body).into_response()
 }
 
 #[debug_handler]

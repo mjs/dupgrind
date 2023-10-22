@@ -6,7 +6,7 @@
     {% for img in group %}
       <div style="vertical-align: top; display: inline-block;">
       <b>{{ loop.index }}</b>: {{ img.path }} - {{ img.width }} x {{ img.height }}<br>
-      <img src="/image/{{ img.path }}" width="800px">
+      <img src="/group/{{ group_idx }}/image/{{ loop.index0 }}" width="800px">
     </div>
     {% endfor %}
   </body>
