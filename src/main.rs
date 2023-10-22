@@ -17,7 +17,7 @@ use std::fs;
 use std::io::{BufRead, BufReader};
 use std::sync::Arc;
 use tokio_util::io::ReaderStream;
-use tower_http::services::{ServeDir, ServeFile};
+use tower_http::services::ServeDir;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -107,7 +107,7 @@ async fn main() {
         trash_dir,
     });
 
-    let mut app = Router::new()
+    let app = Router::new()
         .route("/", get(|| async { Redirect::permanent("/group/0") }))
         .route("/group/:group_idx", get(group).with_state(Arc::clone(&state)))
         .route(
@@ -117,17 +117,7 @@ async fn main() {
         .route(
             "/group/:group_idx/image/:image_idx",
             delete(trash_image).with_state(Arc::clone(&state)),
-        );
-
-    // Add a route for each image
-    // XXX handle with a single handler
-    for img in state.dups.iter().flatten() {
-        app = app.nest_service(
-            format!("/image/{}", &img.path).as_str(),
-            ServeDir::new(base_dir.join(&img.path).as_os_str())
-                .not_found_service(ServeFile::new("assets/missing.png")),
-        );
-    }
+        ).nest_service( "/static", ServeDir::new("assets"));  // XXX package assets into binary
 
     axum::Server::bind(&"0.0.0.0:3000".parse().unwrap())
         .serve(app.into_make_service())
@@ -182,8 +172,8 @@ async fn get_image(
     // `File` implements `AsyncRead`
     let file = match tokio::fs::File::open(source_path).await {
         Ok(file) => file,
-        Err(err) => {
-            return (StatusCode::NOT_FOUND, format!("File not found: {}", err)).into_response();
+        Err(_err) => {
+            return Redirect::to("/static/missing.png").into_response();
         }
     };
 
@@ -195,6 +185,7 @@ async fn get_image(
         .unwrap_or("application/octet-stream");
 
     // XXX include size header?
+    // XXX caching headers
     let headers = [
         (header::CONTENT_TYPE, content_type),
     ];

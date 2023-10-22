@@ -15,7 +15,7 @@
     const deleteImage = function(image_idx) {
       fetch(`/group/{{ group_idx }}/image/${ image_idx }`, { method: 'DELETE' })
         .then(_ => {
-          location.reload(true);
+          location.reload();
         });
     }
 
