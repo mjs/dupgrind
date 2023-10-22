@@ -26,7 +26,7 @@ struct Args {
     filename: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 struct ImgInfo {
     path: String,
     width: u32,
@@ -35,7 +35,6 @@ struct ImgInfo {
 
 type DupGroup = Vec<ImgInfo>;
 
-#[derive(Debug, Clone)]
 struct DupGroups {
     groups: Vec<DupGroup>,
 }
@@ -54,7 +53,6 @@ impl DupGroups {
         self.groups.get(group_idx)
     }
 
-    // XXX return a Result?
     fn get_image(&self, group_idx: usize, image_idx: usize) -> Option<&ImgInfo> {
         let Some(group) = self.groups.get(group_idx) else {
             return None;
@@ -63,8 +61,6 @@ impl DupGroups {
     }
 }
 
-// XXX is clone needed?
-#[derive(Debug, Clone)]
 struct AppState {
     dups: DupGroups,
     base_dir: std::path::PathBuf,
@@ -162,7 +158,7 @@ async fn group(Path(group_idx): Path<usize>, State(state): State<Arc<AppState>>)
     let template = GroupTemplate {
         group_idx,
         is_next_group: group_idx < state.dups.num_groups() - 1,
-        group: group.to_vec(),
+        group: group.to_vec(),  // XXX likely clone, avoid
     };
     HtmlTemplate(template).into_response()
 }
@@ -220,10 +216,12 @@ async fn trash_image(
 
     let source_path = state.base_dir.join(&image.path);
     let target_path = state.trash_dir.join(&image.path);
+    let Some(target_parent) = target_path.parent() else {
+        return (StatusCode::INTERNAL_SERVER_ERROR, "Target has no parent".to_string());
+    };
 
     // Ensure that destination directory exists
-    // XXX deal with unwrap
-    match fs::create_dir_all(target_path.parent().unwrap()) {
+    match fs::create_dir_all(target_parent) {
         Ok(_) => (),
         Err(err) => return (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
     }
