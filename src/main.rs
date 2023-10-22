@@ -36,14 +36,42 @@ struct ImgInfo {
 type DupGroup = Vec<ImgInfo>;
 
 #[derive(Debug, Clone)]
+struct DupGroups {
+    groups: Vec<DupGroup>,
+}
+
+impl DupGroups {
+    // XXX make it buildable
+    fn new(groups: Vec<DupGroup>) -> Self {
+        Self { groups }
+    }
+
+    fn num_groups(&self) -> usize {
+        self.groups.len()
+    }
+
+    fn get_group(&self, group_idx: usize) -> Option<&DupGroup> {
+        self.groups.get(group_idx)
+    }
+
+    // XXX return a Result?
+    fn get_image(&self, group_idx: usize, image_idx: usize) -> Option<&ImgInfo> {
+        let Some(group) = self.groups.get(group_idx) else {
+            return None;
+        };
+        group.get(image_idx)
+    }
+}
+
+// XXX is clone needed?
+#[derive(Debug, Clone)]
 struct AppState {
-    dups: Vec<DupGroup>,
+    dups: DupGroups,
     base_dir: std::path::PathBuf,
     trash_dir: std::path::PathBuf,
 }
 
-fn parse_dups(filename: &str) -> Result<Vec<DupGroup>> {
-    // XXX pre-compile
+fn parse_dups(filename: &str) -> Result<DupGroups> {
     let line_re = Regex::new(r"^\s*\w+\((\d+)x(\d+)\): (.+)")?;
 
     // XXX guess initial size?
@@ -76,7 +104,7 @@ fn parse_dups(filename: &str) -> Result<Vec<DupGroup>> {
             return Err(anyhow!("Missing height on line: {}", line)) 
         };
 
-        // XXX customize errors for failed parsing
+        // XXX customize errors for failed int parsing
         let info = ImgInfo {
             path: path_cap.as_str().to_string(),
             width: width_cap.as_str().parse()?,
@@ -87,7 +115,7 @@ fn parse_dups(filename: &str) -> Result<Vec<DupGroup>> {
     if !group.is_empty() {
         groups.push(group);
     }
-    Ok(groups)
+    Ok(DupGroups::new(groups))
 }
 
 // XXX gracefully handle errors in main
@@ -127,13 +155,13 @@ async fn main() {
 
 #[debug_handler]
 async fn group(Path(group_idx): Path<usize>, State(state): State<Arc<AppState>>) -> Response {
-    let Some(group) = state.dups.get(group_idx) else {
+    let Some(group) = state.dups.get_group(group_idx) else {
         return Redirect::to("/group/0").into_response();
     };
 
     let template = GroupTemplate {
         group_idx,
-        is_next_group: group_idx < state.dups.len() - 1,
+        is_next_group: group_idx < state.dups.num_groups() - 1,
         group: group.to_vec(),
     };
     HtmlTemplate(template).into_response()
@@ -152,19 +180,8 @@ async fn get_image(
     Path((group_idx, image_idx)): Path<(usize, usize)>,
     State(state): State<Arc<AppState>>,
 ) -> Response {
-    // XXX let Some (or extract common helper)
-    let group = match state.dups.get(group_idx) {
-        Option::Some(group) => group,
-        Option::None => {
-            return (StatusCode::NOT_FOUND, "Invalid group index".to_string()).into_response();
-        }
-    };
-
-    let image = match group.get(image_idx) {
-        Option::Some(image) => image,
-        Option::None => {
-            return (StatusCode::NOT_FOUND, "Invalid image index".to_string()).into_response();
-        }
+    let Some(image) = state.dups.get_image(group_idx, image_idx) else {
+        return (StatusCode::NOT_FOUND, "Invalid group or image index".to_string()).into_response();
     };
 
     let source_path = state.base_dir.join(&image.path);
@@ -197,13 +214,8 @@ async fn trash_image(
     Path((group_idx, image_idx)): Path<(usize, usize)>,
     State(state): State<Arc<AppState>>,
 ) -> (StatusCode, String) {
-
-    let Some(group) = state.dups.get(group_idx) else {
-        return (StatusCode::NOT_FOUND, "Invalid group index".to_string());
-    };
-
-    let Some(image) = group.get(image_idx) else {
-        return (StatusCode::NOT_FOUND, "Invalid image index".to_string());
+    let Some(image) = state.dups.get_image(group_idx, image_idx) else {
+        return (StatusCode::NOT_FOUND, "Invalid group or image index".to_string());
     };
 
     let source_path = state.base_dir.join(&image.path);
