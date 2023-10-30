@@ -5,11 +5,13 @@ use axum::{
     body::StreamBody,
     debug_handler,
     extract::{Path, State},
+    headers::{ETag, IfNoneMatch},
     http::header,
     http::StatusCode,
     response::{Html, IntoResponse, Redirect, Response},
     routing::{delete, get},
     Router,
+    TypedHeader,
 };
 use clap::Parser;
 use regex::Regex;
@@ -148,6 +150,7 @@ async fn main() {
         .route(
             "/group/:group_idx/image/:image_idx",
             delete(trash_image).with_state(Arc::clone(&state)),
+        // static should be cached for a bit
         ).nest_service( "/static", ServeDir::new("assets"));  // XXX package assets into binary
 
     axum::Server::bind(&"0.0.0.0:3000".parse().unwrap())
@@ -182,33 +185,44 @@ struct GroupTemplate {
 async fn get_image(
     Path((group_idx, image_idx)): Path<(usize, usize)>,
     State(state): State<Arc<AppState>>,
+    TypedHeader(if_none_match): TypedHeader<IfNoneMatch>,
 ) -> Response {
     let Some(image) = state.dups.get_image(group_idx, image_idx) else {
         return (StatusCode::NOT_FOUND, "Invalid group or image index".to_string()).into_response();
     };
 
+    let content_type = mime_guess::from_path(&image.path)
+        .first_raw()
+        .unwrap_or("application/octet-stream");
+
+    // XXX for etag maybe hash the path + indexes
+    let etag_value = format!("\"{}\"", image.path);
+
+    let mut headers = header::HeaderMap::new();
+    headers.insert(header::CONTENT_TYPE, content_type.parse().unwrap());
+    headers.insert(header::ETAG, etag_value.parse().unwrap());
+
+    // XXX unwrap
+    let etag = etag_value.parse::<ETag>().unwrap();
+    if !if_none_match.precondition_passes(&etag) {
+        return (StatusCode::NOT_MODIFIED, headers).into_response();
+    }
+
     let source_path = state.base_dir.join(&image.path);
 
     // `File` implements `AsyncRead`
-    let file = match tokio::fs::File::open(source_path).await {
-        Ok(file) => file,
-        Err(_err) => {
-            return Redirect::to("/static/missing.png").into_response();
-        }
+    let Ok(file) = tokio::fs::File::open(source_path).await else {
+        return Redirect::to("/static/missing.png").into_response();
+    };
+
+    let Ok(stat) = file.metadata().await else {
+        return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to stat file").into_response();
     };
 
     let stream = ReaderStream::new(file);
     let body = StreamBody::new(stream);
 
-    let content_type = mime_guess::from_path(&image.path)
-        .first_raw()
-        .unwrap_or("application/octet-stream");
-
-    // XXX include size header?
-    // XXX caching headers (ETag, and then handling IfSome)
-    let headers = [
-        (header::CONTENT_TYPE, content_type),
-    ];
+    headers.insert(header::CONTENT_LENGTH, stat.len().to_string().parse().unwrap());
     (headers, body).into_response()
 }
 
