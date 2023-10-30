@@ -26,6 +26,7 @@ struct Args {
     filename: String,
 }
 
+/// The path and size of a single - potentially duplicate - image.
 #[derive(Clone)]
 struct ImgInfo {
     path: String,
@@ -33,16 +34,21 @@ struct ImgInfo {
     height: u32,
 }
 
+/// A set of (potentially) duplicate images.
 type DupGroup = Vec<ImgInfo>;
 
+/// All sets of duplicate images found in a photodedupe run.
 struct DupGroups {
     groups: Vec<DupGroup>,
 }
 
 impl DupGroups {
-    // XXX make it buildable
-    fn new(groups: Vec<DupGroup>) -> Self {
-        Self { groups }
+    fn new(size_guess: usize) -> Self {
+        Self { groups: Vec::with_capacity(size_guess) }
+    }
+
+    fn push_group(&mut self, group: DupGroup) {
+        self.groups.push(group);
     }
 
     fn num_groups(&self) -> usize {
@@ -61,6 +67,7 @@ impl DupGroups {
     }
 }
 
+/// Shared state for passing to route handlers.
 struct AppState {
     dups: DupGroups,
     base_dir: std::path::PathBuf,
@@ -71,7 +78,7 @@ fn parse_dups(filename: &str) -> Result<DupGroups> {
     let line_re = Regex::new(r"^\s*\w+\((\d+)x(\d+)\): (.+)")?;
 
     // XXX guess initial size?
-    let mut groups = Vec::new();
+    let mut dups = DupGroups::new(20);
 
     let reader = BufReader::new(fs::File::open(filename)?);
     let mut group = Vec::new();
@@ -81,7 +88,7 @@ fn parse_dups(filename: &str) -> Result<DupGroups> {
         if !line.starts_with('\t') {
             // A line without a tab means a new group
             if !group.is_empty() {
-                groups.push(group);
+                dups.push_group(group);
             }
             group = Vec::new();
         }
@@ -109,9 +116,9 @@ fn parse_dups(filename: &str) -> Result<DupGroups> {
         group.push(info);
     }
     if !group.is_empty() {
-        groups.push(group);
+        dups.push_group(group);
     }
-    Ok(DupGroups::new(groups))
+    Ok(dups)
 }
 
 // XXX gracefully handle errors in main
@@ -198,7 +205,7 @@ async fn get_image(
         .unwrap_or("application/octet-stream");
 
     // XXX include size header?
-    // XXX caching headers
+    // XXX caching headers (ETag, and then handling IfSome)
     let headers = [
         (header::CONTENT_TYPE, content_type),
     ];
@@ -226,8 +233,8 @@ async fn trash_image(
         Err(err) => return (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
     }
 
-    // XXX deal with unwrap
     // XXX This doesn't work for cross file system moves
+    // XXX deal with unwrap
     fs::rename(source_path, target_path).unwrap();
 
     (StatusCode::OK, "Deleted".to_string())
