@@ -14,7 +14,7 @@ use axum::{
 };
 use clap::Parser;
 use regex::Regex;
-use log::{debug, info};
+use log::{debug, info, error};
 use sha256;
 use std::fs;
 use std::io::{BufRead, BufReader};
@@ -205,12 +205,11 @@ async fn get_image(
 
     let etag_value = format!("\"{}\"", sha256::digest(
             format!("{}:{}:{}:{}", state.base_dir.display(), group_idx, image_idx, &image.path)));
+    debug!("etag: {}", etag_value);
 
     let mut headers = header::HeaderMap::new();
     headers.insert(header::CONTENT_TYPE, content_type.parse().unwrap());
     headers.insert(header::ETAG, etag_value.parse().unwrap());
-
-    debug!("etag: {}", etag_value);
 
     let Ok(etag) = etag_value.parse::<ETag>() else {
         return (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to parse etag: {}", etag_value)).into_response();
@@ -237,8 +236,6 @@ async fn get_image(
     (headers, body).into_response()
 }
 
-// XXX add logging
-//
 #[debug_handler]
 async fn trash_image(
     Path((group_idx, image_idx)): Path<(usize, usize)>,
@@ -250,6 +247,9 @@ async fn trash_image(
 
     let source_path = state.base_dir.join(&image.path);
     let target_path = state.trash_dir.join(&image.path);
+
+    debug!("trashing {} to {}", source_path.display(), target_path.display());
+
     let Some(target_parent) = target_path.parent() else {
         return (StatusCode::INTERNAL_SERVER_ERROR, "Target has no parent".to_string());
     };
@@ -261,9 +261,12 @@ async fn trash_image(
     }
 
     // XXX This doesn't work for cross file system moves
-    match fs::rename(source_path, target_path) {
+    match fs::rename(&source_path, &target_path) {
         Ok(_) => (),
-        Err(err) => return (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
+        Err(err) => {
+            error!("failed to move {} to {}: {}", source_path.display(), target_path.display(), err);
+            return (StatusCode::INTERNAL_SERVER_ERROR, err.to_string());
+        },
     }
 
     (StatusCode::OK, "Deleted".to_string())
