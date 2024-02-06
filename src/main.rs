@@ -14,7 +14,8 @@ use axum::{
 };
 use clap::Parser;
 use regex::Regex;
-use log::{debug, info, error};
+use log::{debug, info};
+use sha256;
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::sync::Arc;
@@ -202,15 +203,18 @@ async fn get_image(
         .first_raw()
         .unwrap_or("application/octet-stream");
 
-    // XXX for etag maybe hash the path + indexes
-    let etag_value = format!("\"{}\"", image.path);
+    let etag_value = format!("\"{}\"", sha256::digest(
+            format!("{}:{}:{}:{}", state.base_dir.display(), group_idx, image_idx, &image.path)));
 
     let mut headers = header::HeaderMap::new();
     headers.insert(header::CONTENT_TYPE, content_type.parse().unwrap());
     headers.insert(header::ETAG, etag_value.parse().unwrap());
 
-    // XXX unwrap
-    let etag = etag_value.parse::<ETag>().unwrap();
+    debug!("etag: {}", etag_value);
+
+    let Ok(etag) = etag_value.parse::<ETag>() else {
+        return (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to parse etag: {}", etag_value)).into_response();
+    };
     if !if_none_match.precondition_passes(&etag) {
         return (StatusCode::NOT_MODIFIED, headers).into_response();
     }
