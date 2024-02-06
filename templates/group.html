@@ -42,10 +42,12 @@
         {% if group_idx > 0 %}
         case 'KeyP':
           document.location.href = "/group/{{ group_idx - 1 }}";
+          break;
         {% endif %}
         {% if is_next_group %}
         case 'KeyN':
           document.location.href = "/group/{{ group_idx + 1 }}";
+          break;
         {% endif %}
       }
     }
