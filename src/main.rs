@@ -1,4 +1,3 @@
-// XXX check for unused deps
 use anyhow::{anyhow, Result};
 use askama::Template;
 use axum::{
@@ -15,6 +14,7 @@ use axum::{
 };
 use clap::Parser;
 use regex::Regex;
+use log::{debug, info, error};
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::sync::Arc;
@@ -99,14 +99,14 @@ fn parse_dups(filename: &str) -> Result<DupGroups> {
             .captures(&line)
             .ok_or_else(|| anyhow!("Line does not match expected format: {}", line))?;
 
-        let Some(path_cap) = caps.get(3) else { 
-            return Err(anyhow!("Missing path on line: {}", line)) 
+        let Some(path_cap) = caps.get(3) else {
+            return Err(anyhow!("Missing path on line: {}", line))
         };
-        let Some(width_cap) = caps.get(1) else { 
+        let Some(width_cap) = caps.get(1) else {
             return Err(anyhow!("Missing width on line: {}", line))
         };
-        let Some(height_cap) = caps.get(2) else { 
-            return Err(anyhow!("Missing height on line: {}", line)) 
+        let Some(height_cap) = caps.get(2) else {
+            return Err(anyhow!("Missing height on line: {}", line))
         };
 
         // XXX customize errors for failed int parsing
@@ -127,9 +127,15 @@ fn parse_dups(filename: &str) -> Result<DupGroups> {
 // XXX avoid all the unwraps
 #[tokio::main]
 async fn main() {
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+
     let args = Args::parse();
+    // XXX make these optional
     let base_dir = std::path::Path::new(&args.filename).parent().unwrap();
     let trash_dir = base_dir.join("trash");
+
+    info!("base dir: {}", base_dir.to_string_lossy());
+    info!("trash dir: {}", trash_dir.to_string_lossy());
 
     let dups = parse_dups(&args.filename).unwrap();
     // XXX bail if no dups
@@ -140,6 +146,7 @@ async fn main() {
         trash_dir,
     });
 
+    // XXX log requests
     let app = Router::new()
         .route("/", get(|| async { Redirect::permanent("/group/0") }))
         .route("/group/:group_idx", get(group).with_state(Arc::clone(&state)))
@@ -226,6 +233,8 @@ async fn get_image(
     (headers, body).into_response()
 }
 
+// XXX add logging
+//
 #[debug_handler]
 async fn trash_image(
     Path((group_idx, image_idx)): Path<(usize, usize)>,
@@ -248,8 +257,10 @@ async fn trash_image(
     }
 
     // XXX This doesn't work for cross file system moves
-    // XXX deal with unwrap
-    fs::rename(source_path, target_path).unwrap();
+    match fs::rename(source_path, target_path) {
+        Ok(_) => (),
+        Err(err) => return (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()),
+    }
 
     (StatusCode::OK, "Deleted".to_string())
 }
