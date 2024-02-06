@@ -2,11 +2,11 @@
 
   {# XXX make this prettier #}
 
-  <body>
+  <body style="background-color: #333333;">
     {% for img in group %}
-      <div style="vertical-align: top; display: inline-block;">
+      <div style="vertical-align: top; display: inline-block; color:white; background-color: #555555; padding: 10px; margin:10px;">
       <b>{{ loop.index }}</b>: {{ img.path }} - {{ img.width }} x {{ img.height }}<br>
-      <img src="/group/{{ group_idx }}/image/{{ loop.index0 }}" width="800px">
+      <img src="/group/{{ group_idx }}/image/{{ loop.index0 }}" width="700px">
     </div>
     {% endfor %}
   </body>
