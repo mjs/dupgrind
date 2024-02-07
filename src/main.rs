@@ -121,6 +121,8 @@ fn parse_dups(filename: &str) -> Result<DupGroups> {
     if !group.is_empty() {
         dups.push_group(group);
     }
+
+    dups.groups.sort_unstable_by_key(|group| group[0].path.clone());
     Ok(dups)
 }
 
@@ -128,7 +130,10 @@ fn parse_dups(filename: &str) -> Result<DupGroups> {
 // XXX avoid all the unwraps
 #[tokio::main]
 async fn main() {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    env_logger::Builder::from_env(
+        env_logger::Env::default().
+            default_filter_or("info")).
+        init();
 
     let args = Args::parse();
     // XXX make these optional
@@ -161,6 +166,7 @@ async fn main() {
         // static should be cached for a bit
         ).nest_service( "/static", ServeDir::new("assets"));  // XXX package assets into binary
 
+    // XXX port should be an arg
     axum::Server::bind(&"0.0.0.0:3000".parse().unwrap())
         .serve(app.into_make_service())
         .await
@@ -203,6 +209,7 @@ async fn get_image(
         .first_raw()
         .unwrap_or("application/octet-stream");
 
+    // XXX this all feels icky
     let etag_value = format!("\"{}\"", sha256::digest(
             format!("{}:{}:{}:{}", state.base_dir.display(), group_idx, image_idx, &image.path)));
     debug!("etag: {}", etag_value);
