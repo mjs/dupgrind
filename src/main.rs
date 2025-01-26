@@ -45,9 +45,9 @@ struct DupGroups {
 }
 
 impl DupGroups {
-    fn new(size_guess: usize) -> Self {
+    fn new() -> Self {
         Self {
-            groups: Vec::with_capacity(size_guess),
+            groups: Vec::with_capacity(16),
         }
     }
 
@@ -79,8 +79,7 @@ struct AppState {
 fn parse_dups(filename: &str) -> Result<DupGroups> {
     let line_re = Regex::new(r"^\s*\w+\((\d+)x(\d+)\): (.+)")?;
 
-    // XXX guess initial size?
-    let mut dups = DupGroups::new(20);
+    let mut dups = DupGroups::new();
 
     let reader = BufReader::new(fs::File::open(filename)?);
     let mut group = Vec::new();
