@@ -83,9 +83,10 @@ fn parse_dups(filename: &str) -> Result<DupGroups> {
 
     let reader = BufReader::new(fs::File::open(filename)?);
     let mut group = Vec::new();
-    // XXX line numbers in errors
-    for line in reader.lines() {
+
+    for (idx, line) in reader.lines().enumerate() {
         let line = line?;
+        let line_num = idx + 1;
         if !line.starts_with('\t') {
             // A line without a tab means a new group
             if !group.is_empty() {
@@ -96,28 +97,28 @@ fn parse_dups(filename: &str) -> Result<DupGroups> {
 
         let caps = line_re
             .captures(&line)
-            .ok_or_else(|| anyhow!("Line does not match expected format: {}", line))?;
+            .ok_or_else(|| anyhow!("Line {} does not match expected format", line_num))?;
 
         let Some(path_cap) = caps.get(3) else {
-            return Err(anyhow!("Missing path on line: {}", line));
+            return Err(anyhow!("Missing path on line {}", line_num));
         };
         let Some(width_cap) = caps.get(1) else {
-            return Err(anyhow!("Missing width on line: {}", line));
+            return Err(anyhow!("Missing width on line {}", line_num));
         };
         let Ok(width) = width_cap.as_str().parse() else {
-            return Err(anyhow!("Invalid width on line: {}", line));
+            return Err(anyhow!("Invalid width on line {}", line_num));
         };
         let Some(height_cap) = caps.get(2) else {
-            return Err(anyhow!("Missing height on line: {}", line));
+            return Err(anyhow!("Missing height on line {}", line_num));
         };
         let Ok(height) = height_cap.as_str().parse() else {
-            return Err(anyhow!("Invalid height on line: {}", line));
+            return Err(anyhow!("Invalid height on line {}", line_num));
         };
 
         let info = ImgInfo {
             path: path_cap.as_str().to_string(),
-            width: width,
-            height: height,
+            width,
+            height,
         };
         group.push(info);
     }
@@ -137,7 +138,7 @@ async fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     let args = Args::parse();
-    // XXX make these optional
+    // XXX make these optional args
     let base_dir = std::path::Path::new(&args.filename).parent().unwrap();
     let trash_dir = base_dir.join("trash");
 
