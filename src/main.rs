@@ -9,12 +9,11 @@ use axum::{
     http::StatusCode,
     response::{Html, IntoResponse, Redirect, Response},
     routing::{delete, get},
-    Router,
-    TypedHeader,
+    Router, TypedHeader,
 };
 use clap::Parser;
+use log::{debug, error, info};
 use regex::Regex;
-use log::{debug, info, error};
 use sha256;
 use std::fs;
 use std::io::{BufRead, BufReader};
@@ -47,7 +46,9 @@ struct DupGroups {
 
 impl DupGroups {
     fn new(size_guess: usize) -> Self {
-        Self { groups: Vec::with_capacity(size_guess) }
+        Self {
+            groups: Vec::with_capacity(size_guess),
+        }
     }
 
     fn push_group(&mut self, group: DupGroup) {
@@ -63,9 +64,7 @@ impl DupGroups {
     }
 
     fn get_image(&self, group_idx: usize, image_idx: usize) -> Option<&ImgInfo> {
-        let Some(group) = self.groups.get(group_idx) else {
-            return None;
-        };
+        let group = self.groups.get(group_idx)?;
         group.get(image_idx)
     }
 }
@@ -101,13 +100,13 @@ fn parse_dups(filename: &str) -> Result<DupGroups> {
             .ok_or_else(|| anyhow!("Line does not match expected format: {}", line))?;
 
         let Some(path_cap) = caps.get(3) else {
-            return Err(anyhow!("Missing path on line: {}", line))
+            return Err(anyhow!("Missing path on line: {}", line));
         };
         let Some(width_cap) = caps.get(1) else {
-            return Err(anyhow!("Missing width on line: {}", line))
+            return Err(anyhow!("Missing width on line: {}", line));
         };
         let Some(height_cap) = caps.get(2) else {
-            return Err(anyhow!("Missing height on line: {}", line))
+            return Err(anyhow!("Missing height on line: {}", line));
         };
 
         // XXX customize errors for failed int parsing
@@ -122,7 +121,8 @@ fn parse_dups(filename: &str) -> Result<DupGroups> {
         dups.push_group(group);
     }
 
-    dups.groups.sort_unstable_by_key(|group| group[0].path.clone());
+    dups.groups
+        .sort_unstable_by_key(|group| group[0].path.clone());
     Ok(dups)
 }
 
@@ -130,10 +130,7 @@ fn parse_dups(filename: &str) -> Result<DupGroups> {
 // XXX avoid all the unwraps
 #[tokio::main]
 async fn main() {
-    env_logger::Builder::from_env(
-        env_logger::Env::default().
-            default_filter_or("info")).
-        init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     let args = Args::parse();
     // XXX make these optional
@@ -155,7 +152,10 @@ async fn main() {
     // XXX log requests
     let app = Router::new()
         .route("/", get(|| async { Redirect::permanent("/group/0") }))
-        .route("/group/:group_idx", get(group).with_state(Arc::clone(&state)))
+        .route(
+            "/group/:group_idx",
+            get(group).with_state(Arc::clone(&state)),
+        )
         .route(
             "/group/:group_idx/image/:image_idx",
             get(get_image).with_state(Arc::clone(&state)),
@@ -163,8 +163,9 @@ async fn main() {
         .route(
             "/group/:group_idx/image/:image_idx",
             delete(trash_image).with_state(Arc::clone(&state)),
-        // static should be cached for a bit
-        ).nest_service( "/static", ServeDir::new("assets"));  // XXX package assets into binary
+            // static should be cached for a bit
+        )
+        .nest_service("/static", ServeDir::new("assets")); // XXX package assets into binary
 
     // XXX port should be an arg
     axum::Server::bind(&"0.0.0.0:3000".parse().unwrap())
@@ -182,7 +183,7 @@ async fn group(Path(group_idx): Path<usize>, State(state): State<Arc<AppState>>)
     let template = GroupTemplate {
         group_idx,
         is_next_group: group_idx < state.dups.num_groups() - 1,
-        group: group.to_vec(),  // XXX likely clone, avoid
+        group: group.to_vec(), // XXX likely clone, avoid
     };
     HtmlTemplate(template).into_response()
 }
@@ -202,24 +203,38 @@ async fn get_image(
     TypedHeader(if_none_match): TypedHeader<IfNoneMatch>,
 ) -> Response {
     let Some(image) = state.dups.get_image(group_idx, image_idx) else {
-        return (StatusCode::NOT_FOUND, "Invalid group or image index".to_string()).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            "Invalid group or image index".to_string(),
+        )
+            .into_response();
     };
 
     let content_type = mime_guess::from_path(&image.path)
         .first_raw()
         .unwrap_or("application/octet-stream");
 
-    // XXX this all feels icky
-    let etag_value = format!("\"{}\"", sha256::digest(
-            format!("{}:{}:{}:{}", state.base_dir.display(), group_idx, image_idx, &image.path)));
-    debug!("etag: {}", etag_value);
+    let etag_value = format!(
+        "\"{}\"",
+        sha256::digest(format!(
+            "{}:{}:{}:{}",
+            state.base_dir.display(),
+            group_idx,
+            image_idx,
+            &image.path
+        ))
+    );
 
     let mut headers = header::HeaderMap::new();
     headers.insert(header::CONTENT_TYPE, content_type.parse().unwrap());
     headers.insert(header::ETAG, etag_value.parse().unwrap());
 
     let Ok(etag) = etag_value.parse::<ETag>() else {
-        return (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to parse etag: {}", etag_value)).into_response();
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to parse etag: {}", etag_value),
+        )
+            .into_response();
     };
     if !if_none_match.precondition_passes(&etag) {
         return (StatusCode::NOT_MODIFIED, headers).into_response();
@@ -239,7 +254,10 @@ async fn get_image(
     let stream = ReaderStream::new(file);
     let body = StreamBody::new(stream);
 
-    headers.insert(header::CONTENT_LENGTH, stat.len().to_string().parse().unwrap());
+    headers.insert(
+        header::CONTENT_LENGTH,
+        stat.len().to_string().parse().unwrap(),
+    );
     (headers, body).into_response()
 }
 
@@ -249,16 +267,26 @@ async fn trash_image(
     State(state): State<Arc<AppState>>,
 ) -> (StatusCode, String) {
     let Some(image) = state.dups.get_image(group_idx, image_idx) else {
-        return (StatusCode::NOT_FOUND, "Invalid group or image index".to_string());
+        return (
+            StatusCode::NOT_FOUND,
+            "Invalid group or image index".to_string(),
+        );
     };
 
     let source_path = state.base_dir.join(&image.path);
     let target_path = state.trash_dir.join(&image.path);
 
-    debug!("trashing {} to {}", source_path.display(), target_path.display());
+    debug!(
+        "trashing {} to {}",
+        source_path.display(),
+        target_path.display()
+    );
 
     let Some(target_parent) = target_path.parent() else {
-        return (StatusCode::INTERNAL_SERVER_ERROR, "Target has no parent".to_string());
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Target has no parent".to_string(),
+        );
     };
 
     // Ensure that destination directory exists
@@ -271,9 +299,14 @@ async fn trash_image(
     match fs::rename(&source_path, &target_path) {
         Ok(_) => (),
         Err(err) => {
-            error!("failed to move {} to {}: {}", source_path.display(), target_path.display(), err);
+            error!(
+                "failed to move {} to {}: {}",
+                source_path.display(),
+                target_path.display(),
+                err
+            );
             return (StatusCode::INTERNAL_SERVER_ERROR, err.to_string());
-        },
+        }
     }
 
     (StatusCode::OK, "Deleted".to_string())
