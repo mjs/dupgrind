@@ -104,15 +104,20 @@ fn parse_dups(filename: &str) -> Result<DupGroups> {
         let Some(width_cap) = caps.get(1) else {
             return Err(anyhow!("Missing width on line: {}", line));
         };
+        let Ok(width) = width_cap.as_str().parse() else {
+            return Err(anyhow!("Invalid width on line: {}", line));
+        };
         let Some(height_cap) = caps.get(2) else {
             return Err(anyhow!("Missing height on line: {}", line));
         };
+        let Ok(height) = height_cap.as_str().parse() else {
+            return Err(anyhow!("Invalid height on line: {}", line));
+        };
 
-        // XXX customize errors for failed int parsing
         let info = ImgInfo {
             path: path_cap.as_str().to_string(),
-            width: width_cap.as_str().parse()?,
-            height: height_cap.as_str().parse()?,
+            width: width,
+            height: height,
         };
         group.push(info);
     }
